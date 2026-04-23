@@ -6,10 +6,6 @@
 #include <commons/bitarray.h>
 #include <string.h>
 
-void saludar(char* quien) 
-{
-    printf("Hola desde %s!!\n", quien);
-}
 
 void* serializar_paquete(t_paquete* paquete, int bytes)
 {
@@ -26,11 +22,16 @@ void* serializar_paquete(t_paquete* paquete, int bytes)
 	return magic;
 }
 
-// Iniciar server y esperar conexion
+void eliminar_paquete(t_paquete* paquete)
+{
+	free(paquete->buffer->stream);
+	free(paquete->buffer);
+	free(paquete);
+}
+// --------------------------servidor----------------------------------------
+
 int iniciar_modulo(char* puerto, t_log* log_modulo)
 {
-	// Quitar esta línea cuando hayamos terminado de implementar la funcion
-
 	int socket_cpu;
 
 	struct addrinfo hints, *servinfo, *p;
@@ -72,7 +73,74 @@ int iniciar_modulo(char* puerto, t_log* log_modulo)
 	return socket_cpu;
 }
 
-// Iniciar cliente
+int establecer_conexion(int socket_escucha, t_log* log_modulo)
+{
+
+	int socket_conectado = accept(socket_escucha, NULL, NULL);
+	if (socket_conectado == -1) {
+		return -1;
+	}
+	log_info(log_modulo, "Se conecto exitosamente");
+	return socket_conectado;
+}
+
+
+
+void* recibir_buffer(int* cod, int* size, int socket_cliente)
+{
+	void * buffer;
+
+	recv(socket_cliente, cod, sizeof(int), MSG_WAITALL);
+	recv(socket_cliente, size, sizeof(int), MSG_WAITALL);
+
+	buffer = malloc(*size);
+	recv(socket_cliente, buffer, *size, MSG_WAITALL);
+		return buffer;
+}
+
+char* recibir_mensaje(int socket_cliente,t_log * log_modulo)
+{
+ 	int size;
+	int cod;
+	//log_info(log_modulo, "tamaño a recibido es %s", (char*)size);
+
+ 	char* buffer = (char*)recibir_buffer(&cod, &size, socket_cliente);
+
+	buffer = strcat(buffer, "\0");
+ 	log_info(log_modulo, "Me llego el mensaje %s", buffer);
+
+	return buffer;
+
+ 	//free(buffer);
+}
+
+t_list* recibir_paquete(int socket_cliente)
+{
+	int size;
+	int desplazamiento = 0;
+	void * buffer;
+	t_list* valores = list_create();
+	int tamanio;
+
+	buffer = recibir_buffer(&size, socket_cliente);
+	while(desplazamiento < size)
+	{
+		memcpy(&tamanio, buffer + desplazamiento, sizeof(int));
+		desplazamiento+=sizeof(int);
+		char* valor = malloc(tamanio);
+		memcpy(valor, buffer+desplazamiento, tamanio);
+		desplazamiento+=tamanio;
+		list_add(valores, valor);
+	}
+	free(buffer);
+	return valores;
+}
+
+
+// ---------------------Cliente-----------------------------
+
+
+
 int iniciar_conexion(char* ip, char* puerto,t_log* log_modulo)
 {
 	struct addrinfo hints;
@@ -98,26 +166,6 @@ int iniciar_conexion(char* ip, char* puerto,t_log* log_modulo)
 
 	return socket_a_crear;
 }
-
-// Servidor acepta cliente
-int establecer_conexion(int socket_escucha, t_log* log_modulo)
-{
-
-	int socket_conectado = accept(socket_escucha, NULL, NULL);
-	if (socket_conectado == -1) {
-		return -1;
-	}
-	log_info(log_modulo, "Se conecto exitosamente");
-	return socket_conectado;
-}
-
-void eliminar_paquete(t_paquete* paquete)
-{
-	free(paquete->buffer->stream);
-	free(paquete->buffer);
-	free(paquete);
-}
-
 void enviar_mensaje(char* mensaje, int socket_cliente, t_log* log_modulo)
 {
 	t_paquete* paquete = malloc(sizeof(t_paquete));
@@ -143,9 +191,9 @@ void enviar_mensaje(char* mensaje, int socket_cliente, t_log* log_modulo)
 
 	memcpy(&buffer, a_enviar+(2*sizeof(int)), size);
 
-	log_info(log_modulo, "aca esta el Cod %d", cod);
-	log_info(log_modulo, "aca esta el size %d", size);
-	log_info(log_modulo, "aca esta el buffer %s", buffer);
+	log_info(log_modulo, "Codigo de Operacion %d", cod);
+	log_info(log_modulo, "Tamaño %d", size);
+	log_info(log_modulo, "Buffer %s", buffer);
 	
 	send(socket_cliente, a_enviar, bytes, 0);
 
@@ -153,32 +201,6 @@ void enviar_mensaje(char* mensaje, int socket_cliente, t_log* log_modulo)
 	eliminar_paquete(paquete);
 }
 
-
-void* recibir_buffer(int* cod, int* size, int socket_cliente)
-{
-	void * buffer;
-
-	recv(socket_cliente, cod, sizeof(int), MSG_WAITALL);
-	recv(socket_cliente, size, sizeof(int), MSG_WAITALL);
-
-	buffer = malloc(*size);
-	recv(socket_cliente, buffer, *size, MSG_WAITALL);
-		return buffer;
-}
-
-void recibir_mensaje(int socket_cliente,t_log * log_modulo)
-{
- 	int size;
-	int cod;
-	//log_info(log_modulo, "tamaño a recibido es %s", (char*)size);
-
- 	char* buffer = (char*)recibir_buffer(&cod, &size, socket_cliente);
-
-	buffer = strcat(buffer, "\0");
-
- 	log_info(log_modulo, "Me llego el mensaje %s", buffer);
- 	free(buffer);
-}
 
 void reenviar_mensaje(int socket_cliente,int socket_servidor,t_log * log_modulo)
 {
@@ -194,3 +216,51 @@ void reenviar_mensaje(int socket_cliente,int socket_servidor,t_log * log_modulo)
 	enviar_mensaje(buffer,socket_servidor,log_modulo);
  	free(buffer);
 }
+
+void crear_buffer(t_paquete* paquete)
+{
+	paquete->buffer = malloc(sizeof(t_buffer));
+	paquete->buffer->size = 0;
+	paquete->buffer->stream = NULL;
+}
+
+t_paquete* crear_paquete(void)
+{
+	t_paquete* paquete = malloc(sizeof(t_paquete));
+	paquete->codigo_operacion = PAQUETE;
+	crear_buffer(paquete);
+	return paquete;
+}
+
+void agregar_a_paquete(t_paquete* paquete, void* valor, int tamanio)
+{
+	paquete->buffer->stream = realloc(paquete->buffer->stream, paquete->buffer->size + tamanio + sizeof(int));
+
+	memcpy(paquete->buffer->stream + paquete->buffer->size, &tamanio, sizeof(int));
+	memcpy(paquete->buffer->stream + paquete->buffer->size + sizeof(int), valor, tamanio);
+
+	paquete->buffer->size += tamanio + sizeof(int);
+}
+
+void enviar_paquete(t_paquete* paquete, int socket_cliente)
+{
+	int bytes = paquete->buffer->size + 2*sizeof(int);
+	void* a_enviar = serializar_paquete(paquete, bytes);
+
+	send(socket_cliente, a_enviar, bytes, 0);
+
+	free(a_enviar);
+}
+
+void eliminar_paquete(t_paquete* paquete)
+{
+	free(paquete->buffer->stream);
+	free(paquete->buffer);
+	free(paquete);
+}
+
+void liberar_conexion(int socket_cliente)
+{
+	close(socket_cliente);
+}
+
