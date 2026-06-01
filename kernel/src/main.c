@@ -7,6 +7,7 @@
 #include <commons/collections/queue.h>
 #include <commons/string.h>
 #include <string.h>
+#include <commons/temporal.h>
 //log y config
 t_log *log_kernel;
 t_config * config_kernel;
@@ -30,6 +31,13 @@ typedef struct
     int metricas_de_tiempo[7];
 }PCB;
 
+typedef struct 
+{
+    char* archivo_psedo;
+    PCB *pcb;
+    int tamanio;
+}Proceso;
+
 
 //colas de planificacion -- id x cola
 t_queue * new; //0
@@ -42,35 +50,106 @@ t_queue * sus_blocked; //6
 t_queue * sus_ready; //7
 
 //algoritmo largo plazo
-void planificador_largo_plazo(char*nombre_archivo,int tamanio, int conexion_memoria)
+void estado_new( Proceso proceso_entrante)
 {
-    if(queue_is_empty(new))
-    {
-        t_paquete* paquete = crear_paquete();
-        agregar_a_paquete(paquete,nombre_archivo,nombre_archivo,string_length(nombre_archivo)*sizeof(char));
-        agregar_a_paquete(paquete,&tamanio,sizeof(int));
-        enviar_paquete(paquete,conexion_memoria);
-        char*mensaje = recibir_mensaje(conexion_memoria,log_kernel);
-        if(st)
+    queue_push(new,proceso); // aca entra un proceso 
 
+    Proceso proceso_saliente = siguiente_proceso(algoritmo_cola_new,new,) // aca se elige el proceso que sale
+    
+    if(!(queue_is_empty(sus_ready)))
+    {
+        if(hay_memoria(proceso_saliente))
+        {
+            queue_pop(new,proceso_saliente);
+            estado_ready(proceso_saliente);
+        }else{
+            estado_new(proceso_saliente);
+        }
+    }else{
+        estado_new(proceso);
+    }
+  
+}
+
+void estado_ready (Proceso proceso_entrante)
+{
+    queue_push(ready,proceso_entrante);  
+    do{
+        Proceso proceso_saliente = siguiente_proceso(algoritmo_planificacion, ready) // aca se elige el proceso que sal
+        queue_pop(ready,proceso_saliente);
+        estado_execute(proceso_saliente);
+    }while(!(queue_is_empty(ready)) && cant_cpu_disponibles>0)
+    
+    
+   
+}
+
+void estado_execute(Proceso proceso_entrante)
+{
+    queue_push(execute,proceso_entrante);
+    
+    Proceso proceso_saliente = siguiente_proceso(algoritmo_planificacion, ready);
+    realizar_procesamiento(proceso);
+    queue_pop(execute,proceso);
+    estado_exit(proceso);
+    
+    
+    
+
+}
+void  estado_exit(Proceso proceso)
+{
+    queue_push(exit,proceso);
+    comunicar_liberacion_memoria(proceso);
+}
+void estado_blocked(Proceso proceso)
+{
+
+    
+    queue_push(blocked,proceso);
+    
+    
+
+}
+
+void estado_sus_blocked(Proceso proceso)
+{
+
+}
+
+
+void estado_sus_ready(Proceso proceso)
+{
+
+}
+
+
+bool es_su_turno(char* algoritmo,t_queue*cola,Proceso proceso)
+{
+    switch (algoritmo)
+    {
+    case "FIFO":
+        return  *(queue_peek(cola))== proceso
+        break;
+    case "SJFC":
+
+        break;
+    case "SJFS":
+        /* code */
+        break;
+    case "PCMP"
+        break;
     }
 }
 
-//algoritmo corto plazo
-void planificador_corto_plazo()
+void realizar_procesamiento(Proceso proceso)
 {
-    
 
 }
-
-
-//algoritmo mediano plazo
-void planificador_mediano_plazo()
+void comunicar_liberacion_memoria(Proceso proceso)
 {
-    
 
 }
-
 void iniciar_config_y_log ()
 {
     t_config * config_kernel= config_create("kernel.conf");
